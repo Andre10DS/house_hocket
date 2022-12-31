@@ -27,9 +27,10 @@ def set_feature(data):
     #add new features
     data['price_m2'] = data['price'] / data['sqft_lot']
 
+    return data
 def overview_data(data):
 
-    f_attributes = st.sidebar.multiselect('Enter colummns', data.columns)
+    f_attributes = st.sidebar.multiselect('Enter columns', data.columns)
     f_zipcode = st.sidebar.multiselect('Enter zipcode', data['zipcode'].unique())
 
     st.title('Data Overview')
