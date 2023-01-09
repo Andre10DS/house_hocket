@@ -7,6 +7,7 @@ import geopandas
 from folium.plugins import MarkerCluster
 import plotly.express as px
 from datetime import date, datetime
+from PIL import Image
 
 st.set_page_config(layout='wide')
 
@@ -28,7 +29,25 @@ def set_feature(data):
     data['price_m2'] = data['price'] / data['sqft_lot']
 
     return data
+
+def load_image(logo):
+    image = Image.open(logo)
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.write(' ')
+
+    with c2:
+        st.image(image)
+
+    with c3:
+        st.write(' ')
+
 def overview_data(data):
+
+
+    st.sidebar.title('Data Overview')
 
     f_attributes = st.sidebar.multiselect('Enter columns', data.columns)
     f_zipcode = st.sidebar.multiselect('Enter zipcode', data['zipcode'].unique())
@@ -44,7 +63,7 @@ def overview_data(data):
     else:
         data = data.copy()
 
-    st.dataframe(data.head())
+    st.dataframe(data)
 
     c1, c2 = st.columns((1, 1))
     # Average metrics
@@ -82,7 +101,7 @@ def overview_data(data):
 def portifolio_density(data, geofile):
     st.title('Region Overview')
 
-    c1, c2 = st.columns((1, 1))
+    c1, c2 = st.columns([2.2,2])
     c1.header('Portfolio Density')
 
     df = data.sample(1000)
@@ -115,6 +134,8 @@ def portifolio_density(data, geofile):
     df = data[['price', 'zipcode']].groupby('zipcode').mean().reset_index()
     df.columns = ['ZIP', 'PRICE']
 
+
+
     # df = df.sample(10)
 
     geofile = geofile[geofile['ZIP'].isin(df['ZIP'].tolist())]
@@ -122,14 +143,14 @@ def portifolio_density(data, geofile):
     region_price_map = folium.Map(location=[data['lat'].mean(), data['long'].mean()],
                                   default_zoom_start=15)
 
-    region_price_map.choropleth(data=df,
+    folium.Choropleth(data=df,
                                 geo_data=geofile,
                                 columns=['ZIP', 'PRICE'],
                                 key_on='feature.properties.ZIP',
                                 fill_color='YlOrRd',
                                 fill_opacity=0.7,
                                 line_opacity=0.2,
-                                legend_name='AVG PRICE')
+                                legend_name='AVG PRICE').add_to(region_price_map)
     with c2:
         folium_static(region_price_map)
     return None
@@ -202,20 +223,20 @@ def attributes_distribution(data):
 
     # filters
     f_bedrooms = st.sidebar.selectbox('Max number of bedrooms', sorted(set(data['bedrooms'].unique())))
-    f_bathrooms = st.sidebar.selectbox('Max number of bedrooms', sorted(set(data['bathrooms'].unique())))
+    f_bathrooms = st.sidebar.selectbox('Max number of bathrooms', sorted(set(data['bathrooms'].unique())))
 
     c1, c2 = st.columns(2)
 
     # House per bedrooms
     c1.header('Houses per bedrooms')
     df = data[data['bedrooms'] < f_bedrooms]
-    fig = px.histogram(data, x='bedrooms', nbins=19)
+    fig = px.histogram(df, x='bedrooms', nbins=19)
     c1.plotly_chart(fig, use_container_width=True)
 
     # House pr bathrooms
     c2.header('Houses per bathrooms')
     df = data[data['bathrooms'] < f_bathrooms]
-    fig = px.histogram(data, x='bathrooms', nbins=19)
+    fig = px.histogram(df, x='bathrooms', nbins=19)
     c2.plotly_chart(fig, use_container_width=True)
 
     # filters
@@ -225,16 +246,19 @@ def attributes_distribution(data):
 
     c1, c2 = st.columns(2)
 
-    # House pr floors
+    # House per floors
     c1.header('Houses per floor')
     df = data[data['floors'] < f_floors]
 
     # plot
-    c2.header('Houses overlooking water')
-    fig = px.histogram(data, x='floors', nbins=19)
+
+    fig = px.histogram(df, x='floors', nbins=19)
     c1.plotly_chart(fig, use_container_width=True)
 
     # House per water view
+
+    c2.header('Houses overlooking water')
+
     if f_waterview:
         df = data[data['waterfront'] == 1]
     else:
@@ -242,10 +266,101 @@ def attributes_distribution(data):
     fig = px.histogram(df, x='waterfront', nbins=10)
     c2.plotly_chart(fig, use_container_width=True)
 
+    return None
+
+def buy_properties(data):
+
+
+
+    st.sidebar.title('Properties to buy and selling price')
+    st.sidebar.header('Indications for buying and selling')
+
+    f_buy_properties = st.sidebar.checkbox ('Properties that must be purchased')
+
+    df_median = data[['zipcode', 'price']].groupby('zipcode').median().reset_index()
+    df_median.columns = ['zipcode', 'price_median']
+    df_gropy = pd.merge(data, df_median, on='zipcode', how='inner')
+
+    df_gropy['buy'] = 'no'
+    df_gropy['buy'] = df_gropy[['buy', 'price', 'price_median', 'condition']].apply(
+        lambda x: 'yes' if (x['price'] < x['price_median']) & (x['condition'] <= 3) else 'no', axis=1)
+
+    df_gropy['month'] = pd.to_datetime(df_gropy['date']).dt.strftime('%m').astype('int64')
+    df_gropy['day'] = pd.to_datetime(df_gropy['date']).dt.strftime('%d').astype('int64')
+
+    df_gropy_sell = df_gropy.copy()
+
+    def season(day, month):
+        if month in (1, 2):
+            return 'SUMMER'
+        elif month == 3:
+            if day < 21:
+                return 'SUMMER'
+            else:
+                return 'AUTUMN'
+        elif month in (4, 5):
+            return 'AUTUMN'
+        elif month == 6:
+            if day < 21:
+                return 'AUTUMN'
+            else:
+                return 'WINTER'
+        elif month in (7, 8):
+            return 'WINTER'
+        elif month == 9:
+            if day < 21:
+                return 'WINTER'
+            else:
+                return 'SPRING'
+        elif month in (10, 11):
+            return 'SPRING'
+        elif month == 12:
+            if day < 21:
+                return 'SPRING'
+            else:
+                return 'SUMMER'
+
+    df_gropy_sell['season_median'] = list(map(season, df_gropy_sell['day'], df_gropy_sell['month']))
+
+    df_median_2 = df_gropy_sell[['zipcode', 'season_median', 'price']].groupby(
+        ['zipcode', 'season_median']).median().reset_index()
+
+    df_gropy_sell = pd.merge(df_gropy_sell, df_median_2, on='zipcode', how='inner')
+    df_gropy_sell = df_gropy_sell.drop('season_median_x', axis=1)
+    df_gropy_sell = df_gropy_sell.rename(
+        columns={'price_y': 'price_season', 'price_x': 'price_buy', 'season_median_y': 'season_median'})
+
+    df_gropy_sell['price_sell'] = df_gropy_sell[['price_buy', 'price_season']].apply(
+        lambda x: x['price_buy'] * 1.30 if x['price_buy'] < x['price_season'] else x['price_buy'] * 1.10, axis=1)
+
+    if f_buy_properties:
+        df_buy = df_gropy[df_gropy['buy']=='yes']
+        df_sell = df_gropy_sell[df_gropy_sell['buy'] == 'yes']
+    else:
+        df_buy = df_gropy.copy()
+        df_sell = df_gropy_sell.copy()
+
+    df_buy = df_buy.rename(columns={'price':'price_buy'})
+
+    st.title('Properties to buy and selling price')
+
+    c1,c2 = st.columns(2)
+    c1.header('Properties for buying')
+    c2.header('Price for selling')
+
+    c1.dataframe(df_buy[['id', 'price_buy', 'zipcode', 'condition', 'price_median', 'buy']])
+
+
+    c2.dataframe(df_sell[['id', 'price_buy', 'season_median','price_season', 'price_sell', 'condition', 'zipcode']])
+
+    return None
+
+
 if __name__ == '__main__':
     #Data extraction
     path = 'kc_house_data.csv'
     url = 'https://opendata.arcgis.com/datasets/83fc2e72903343aabff6de8cb445b81c_2.geojson'
+    logo = 'house_hocket_logo.png'
 
     data = get_data(path)
     geofile = get_geofile(url)
@@ -253,10 +368,13 @@ if __name__ == '__main__':
     #transformation
     data = set_feature(data)
 
+    load_image(logo)
     overview_data(data)
     portifolio_density(data, geofile)
     commercial_distribution(data)
     attributes_distribution(data)
+    buy_properties(data)
+
 
 
 
